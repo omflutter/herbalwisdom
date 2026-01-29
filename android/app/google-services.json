@@ -1,0 +1,64 @@
+{
+  "project_info": {
+    "project_number": "649611048569",
+    "project_id": "herbalwisdom-450cb",
+    "storage_bucket": "herbalwisdom-450cb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:649611048569:android:5f1133adcaf6ca0ef946a8",
+        "android_client_info": {
+          "package_name": "com.robolaxy.herbalwisdom"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyATx2sgqaZSa9ZwT0X7wQrzq7WgcOqVA60"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "649611048569-hhmceti3akqdm4pssol62r179bk0tsuj.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.robolaxy.herbalwisdom1"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:649611048569:android:17a659591e850f62f946a8",
+        "android_client_info": {
+          "package_name": "com.robolaxy.herbalwisdom1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyATx2sgqaZSa9ZwT0X7wQrzq7WgcOqVA60"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "649611048569-hhmceti3akqdm4pssol62r179bk0tsuj.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.robolaxy.herbalwisdom1"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
