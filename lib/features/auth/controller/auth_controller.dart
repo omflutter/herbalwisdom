@@ -57,6 +57,9 @@ class AuthController {
     return RegisterResult(success: success, message: res.message);
   }
 
+  /// Sign in / sign up with Google (also verifies the email of an existing account).
+  Future<GoogleLoginResult> loginWithGoogle() => _repo.signInWithGoogle();
+
   Future<bool> sendEmailOtp(String email) async {
     return _repo.sendEmailOtp(email);
   }

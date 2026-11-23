@@ -37,6 +37,8 @@
     	</array>
 
 
+	<key>GIDClientID</key>
+	<string>649611048569-hhmceti3akqdm4pssol62r179bk0tsuj.apps.googleusercontent.com</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

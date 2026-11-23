@@ -8,6 +8,7 @@ import 'package:herbalwisdom/common/widgets/app_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_app_installations/firebase_app_installations.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import '../mdoels/auth_models.dart';
 
@@ -150,6 +151,87 @@ class AuthRepo {
     }
   }
 
+  /// --- GOOGLE SIGN-IN -> Firebase -> /google-login ---
+  ///
+  /// Backend links/creates the account by the Google email and marks that email as verified
+  /// (this also verifies an existing account whose email was never verified).
+  static bool _googleInitialized = false;
+
+  Future<GoogleLoginResult> signInWithGoogle() async {
+    try {
+      final google = GoogleSignIn.instance;
+      if (!_googleInitialized) {
+        await google.initialize();
+        _googleInitialized = true;
+      }
+
+      final account = await google.authenticate();
+      final googleIdToken = account.authentication.idToken;
+      if (googleIdToken == null) {
+        return GoogleLoginResult(status: '0', message: 'Google did not return a sign-in token.');
+      }
+
+      await _auth.signInWithCredential(GoogleAuthProvider.credential(idToken: googleIdToken));
+      final firebaseIdToken = await _auth.currentUser?.getIdToken(true);
+      if (firebaseIdToken == null) {
+        return GoogleLoginResult(status: '0', message: 'Could not complete Google sign-in.');
+      }
+
+      final deviceId = await _getFirebaseDeviceId();
+      final resp = await _dio.post('/google-login', data: FormData.fromMap({'id_token': firebaseIdToken, 'device_id': deviceId}));
+      final data = resp.data as Map;
+
+      final status = (data['status'] ?? '').toString();
+      final message = (data['message'] ?? '').toString();
+      final details = data['details'] is Map ? data['details'] as Map : const {};
+      final token = details['token'] as String?;
+
+      if (status != '1' || token == null) {
+        // Don't leave a half-signed-in Firebase/Google session behind.
+        await _signOutGoogle();
+        await _auth.signOut();
+        return GoogleLoginResult(status: status.isEmpty ? '0' : status, message: message.isEmpty ? 'Google sign-in failed.' : message);
+      }
+
+      // Chat + push topic are keyed on the backend's firebase_id (an existing phone account keeps its original one).
+      final firebaseId = (details['firebase_id'] ?? _auth.currentUser?.uid ?? '').toString();
+
+      await _saveToken(token);
+      final prefs = await SharedPreferences.getInstance();
+      if (firebaseId.isNotEmpty) {
+        await prefs.setString('firebase_id', firebaseId);
+        await prefs.setString('user_id', firebaseId);
+        await _subscribeToUserTopic(firebaseId);
+      }
+
+      return GoogleLoginResult(status: status, message: message, token: token, isNewUser: details['is_new_user'] == true, phoneRequired: details['phone_required'] == true);
+    } on GoogleSignInException catch (e) {
+      if (e.code == GoogleSignInExceptionCode.canceled) {
+        return GoogleLoginResult(status: '0', message: '', cancelled: true);
+      }
+      debugPrint('❌ [AuthRepo] Google sign-in error: ${e.code} ${e.description}');
+      return GoogleLoginResult(status: '0', message: 'Google sign-in failed. Please try again.');
+    } on FirebaseAuthException catch (e) {
+      debugPrint('❌ [AuthRepo] Firebase Google credential error: ${e.code} ${e.message}');
+      await _signOutGoogle();
+      return GoogleLoginResult(status: '0', message: e.message ?? 'Google sign-in failed.');
+    } on DioException catch (e) {
+      debugPrint('❌ [AuthRepo] /google-login network error: ${e.message}');
+      await _signOutGoogle();
+      await _auth.signOut();
+      return GoogleLoginResult(status: '0', message: 'Network error');
+    } catch (e) {
+      debugPrint('❌ [AuthRepo] Google sign-in unexpected error: $e');
+      return GoogleLoginResult(status: '0', message: 'Unexpected error');
+    }
+  }
+
+  Future<void> _signOutGoogle() async {
+    try {
+      if (_googleInitialized) await GoogleSignIn.instance.signOut();
+    } catch (_) {}
+  }
+
   /// --- CALL /register-user (returns token on success) ---
   Future<RegisterApiResult> registerUser({required String firstName, required String lastName, required String email, required String phone}) async {
     try {
@@ -228,6 +310,7 @@ class AuthRepo {
       // 2️⃣ Always clear Firebase + local state
       final uid = _auth.currentUser?.uid ?? '';
       await _unsubscribeFromUserTopic(uid);
+      await _signOutGoogle();
       await _auth.signOut();
       await prefs.clear(); // This clears user_id too
       _current = null;
@@ -317,6 +400,16 @@ class LoginApiResult {
   final String message;
   final String? token;
   LoginApiResult({required this.status, required this.message, this.token});
+}
+
+class GoogleLoginResult {
+  final String status; // "1" success, "0" error
+  final String message;
+  final String? token;
+  final bool isNewUser;
+  final bool phoneRequired;
+  final bool cancelled; // user closed the Google account picker
+  GoogleLoginResult({required this.status, required this.message, this.token, this.isNewUser = false, this.phoneRequired = false, this.cancelled = false});
 }
 
 class RegisterApiResult {

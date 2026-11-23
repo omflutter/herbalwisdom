@@ -4,6 +4,8 @@ import '../../../common/widgets/back_exit_guard.dart';
 import '../../../common/widgets/auth_frame.dart';
 import '../controller/auth_controller.dart';
 import 'otp_screen.dart';
+import '../../home/view/home_screen.dart';
+import '../../notifications/view/notifcation_prefs_screen.dart';
 
 import 'package:country_code_picker/country_code_picker.dart';
 
@@ -21,6 +23,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _phone = TextEditingController();
   final _auth = AuthController();
   bool _busy = false;
+  bool _googleBusy = false;
   String _countryCode = '+61';
   int _maxLength = 9;
 
@@ -110,8 +113,31 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _continueWithGoogle() async {
+    setState(() => _googleBusy = true);
+    final res = await _auth.loginWithGoogle();
+    if (!mounted) return;
+    setState(() => _googleBusy = false);
+
+    if (res.cancelled) return;
+
+    if (res.status != '1') {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res.message)));
+      return;
+    }
+
+    if (res.isNewUser) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Account created 🎉')));
+      context.go(NotificationPrefsScreen.routePath);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Welcome back! ✅')));
+      context.go(HomeScreen.routePath);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final anyBusy = _busy || _googleBusy;
     return BackExitGuard(
       child: Scaffold(
         body: AuthFrame(
@@ -167,7 +193,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: _busy ? null : _submit,
+                    onPressed: anyBusy ? null : _submit,
                     child:
                         _busy
                             ? const SizedBox(
@@ -180,6 +206,21 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 10),
                 const _TrustRow(),
+                const SizedBox(height: 18),
+                const _OrDivider(),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: anyBusy ? null : _continueWithGoogle,
+                    style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                    icon:
+                        _googleBusy
+                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const _GoogleMark(),
+                    label: const Text('Continue with Google'),
+                  ),
+                ),
               ],
             ),
           ),
@@ -204,6 +245,38 @@ class _TrustRow extends StatelessWidget {
           Text('Secure login — OTP sent to your number'),
         ],
       ),
+    );
+  }
+}
+
+class _OrDivider extends StatelessWidget {
+  const _OrDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).dividerColor;
+    return Row(
+      children: [
+        Expanded(child: Divider(color: color)),
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Text('or', style: Theme.of(context).textTheme.bodySmall)),
+        Expanded(child: Divider(color: color)),
+      ],
+    );
+  }
+}
+
+/// Simple multi-colour "G" so we don't need an image asset.
+class _GoogleMark extends StatelessWidget {
+  const _GoogleMark();
+
+  @override
+  Widget build(BuildContext context) {
+    return ShaderMask(
+      shaderCallback:
+          (bounds) => const SweepGradient(
+            colors: [Color(0xFF4285F4), Color(0xFF34A853), Color(0xFFFBBC05), Color(0xFFEA4335), Color(0xFF4285F4)],
+          ).createShader(bounds),
+      child: const Text('G', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white, height: 1)),
     );
   }
 }
