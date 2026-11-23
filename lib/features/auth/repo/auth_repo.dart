@@ -95,18 +95,24 @@ class AuthRepo {
     }
   }
 
-  /// --- EMAIL OTP (Manual) ---
-  Future<bool> sendEmailOtp(String email) async {
+  /// --- EMAIL CODE (backend, not Firebase) ---
+  /// The backend emails a 6-digit code (valid 10 min) via the shop's mailbox.
+  /// Max one code per email per 60s; [EmailCodeSendResult.retryAfter] says how long to wait.
+  Future<EmailCodeSendResult> sendEmailOtp(String email, {String purpose = 'register'}) async {
     try {
-      // API call to backend to send OTP
-      final res = await _dio.post('/send-otp-on-email', data: FormData.fromMap({'email': email}));
-      final status = res.data['status']?.toString();
-      debugPrint('📧 [AuthRepo] sendEmailOtp: $status');
-      return status == "1";
+      final res = await _dio.post('/send-otp-on-email', data: FormData.fromMap({'email': email.trim(), 'purpose': purpose}));
+      final data = res.data as Map;
+      final details = data['details'] is Map ? data['details'] as Map : const {};
+      final ok = data['status']?.toString() == '1';
+      debugPrint('📧 [AuthRepo] sendEmailOtp: ${data['status']}');
+      return EmailCodeSendResult(
+        ok: ok,
+        message: (data['message'] ?? (ok ? 'Code sent.' : 'Could not send the code. Please try again.')).toString(),
+        retryAfter: int.tryParse('${details['retry_after'] ?? ''}') ?? (ok ? 60 : 0),
+      );
     } catch (e) {
       debugPrint('❌ [AuthRepo] sendEmailOtp error: $e');
-      // For now, return false. In a real app, rethrow or handle error.
-      return false;
+      return EmailCodeSendResult(ok: false, message: 'Network error. Please try again.');
     }
   }
 
@@ -408,6 +414,13 @@ class LoginApiResult {
   final String message;
   final String? token;
   LoginApiResult({required this.status, required this.message, this.token});
+}
+
+class EmailCodeSendResult {
+  final bool ok;
+  final String message;
+  final int retryAfter; // seconds until another code can be requested
+  EmailCodeSendResult({required this.ok, required this.message, this.retryAfter = 0});
 }
 
 class GoogleEmailCheckResult {

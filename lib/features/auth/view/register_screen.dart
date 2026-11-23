@@ -37,6 +37,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   // Step variables for email verification
   bool _isVerified = false;
   bool _verifiedByGoogle = false;
+  String? _lastCodeSentTo;
   bool _googleBusy = false;
   Timer? _verificationTimer;
 
@@ -124,18 +125,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     setState(() => _busy = true);
-    final sent = await _auth.sendEmailOtp(email);
+    final res = await _auth.sendEmailOtp(email);
     setState(() => _busy = false);
+    if (!mounted) return;
 
-    if (sent) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('OTP sent to $email')));
-
-      // Show OTP Input Dialog
+    if (res.ok) {
+      _lastCodeSentTo = email.toLowerCase();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('We emailed a 6-digit code to $email')));
+      _showEmailOtpDialog(email);
+    } else if (res.retryAfter > 0 && _lastCodeSentTo == email.toLowerCase()) {
+      // A code was just sent to this address - let them enter it instead of waiting.
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res.message)));
       _showEmailOtpDialog(email);
     } else {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to send OTP. Please try again.')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res.message)));
     }
   }
 
@@ -176,9 +179,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('Enter the code sent to $email'),
+                  Text('Enter the 6-digit code we emailed to $email.'),
+                  const SizedBox(height: 4),
+                  Text("Can't see it? Check your spam or junk folder. The code expires in 10 minutes.", style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(height: 12),
-                  TextField(controller: otpCtrl, keyboardType: TextInputType.number, maxLength: 6, decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'OTP')),
+                  TextField(controller: otpCtrl, keyboardType: TextInputType.number, maxLength: 6, decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Verification code')),
                 ],
               ),
               actions: [

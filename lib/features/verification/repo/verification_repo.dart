@@ -40,12 +40,19 @@ class VerificationRepo implements VerificationActions {
     return null;
   }
 
+  /// Emails a 6-digit code from the backend (not Firebase). One code per email per 60s.
   @override
   Future<VerificationResult> sendEmailCode(String email) async {
     try {
-      final res = await _dio.post('/send-otp-on-email', data: FormData.fromMap({'email': email.trim()}));
+      final res = await _dio.post('/send-otp-on-email', data: FormData.fromMap({'email': email.trim(), 'purpose': 'verify'}));
       final data = res.data as Map;
-      return VerificationResult(status: data['status']?.toString() ?? '0', message: (data['message'] ?? '').toString());
+      final details = data['details'] is Map ? data['details'] as Map : const {};
+      final st = data['status']?.toString() ?? '0';
+      return VerificationResult(
+        status: st,
+        message: (data['message'] ?? '').toString(),
+        retryAfter: int.tryParse('${details['retry_after'] ?? ''}') ?? (st == '1' ? 60 : 0),
+      );
     } on DioException catch (e) {
       debugPrint('❌ [Verification] send code: ${e.message}');
       return const VerificationResult(status: '0', message: 'Network error. Please try again.');

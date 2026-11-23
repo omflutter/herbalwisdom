@@ -9,7 +9,10 @@ class VerificationResult {
   final String? googleEmail;
   final bool cancelled;
 
-  const VerificationResult({required this.status, this.message = '', this.updated, this.googleEmail, this.cancelled = false});
+  /// Seconds before another email code can be requested (send-code only).
+  final int retryAfter;
+
+  const VerificationResult({required this.status, this.message = '', this.updated, this.googleEmail, this.cancelled = false, this.retryAfter = 0});
 
   bool get ok => status == '1';
   bool get needsEmailChangeConfirmation => status == '3';

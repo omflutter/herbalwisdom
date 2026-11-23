@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -44,16 +46,34 @@ class _VerifyAccountSheetState extends State<VerifyAccountSheet> {
   bool _busyGoogle = false;
   String? _error;
 
+  // Resend cooldown (backend allows one code per email per 60s).
+  Timer? _cooldownTimer;
+  int _cooldown = 0;
+
   bool get _busy => _busyCode || _busyGoogle;
 
   @override
   void initState() {
     super.initState();
-    if (_codeSent) _codeSentTo = widget.status.email;
+    if (_codeSent) {
+      _codeSentTo = widget.status.email;
+      _startCooldown(60);
+    }
+  }
+
+  void _startCooldown(int seconds) {
+    _cooldownTimer?.cancel();
+    setState(() => _cooldown = seconds);
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) return t.cancel();
+      setState(() => _cooldown = _cooldown > 0 ? _cooldown - 1 : 0);
+      if (_cooldown == 0) t.cancel();
+    });
   }
 
   @override
   void dispose() {
+    _cooldownTimer?.cancel();
     _emailCtrl.dispose();
     _codeCtrl.dispose();
     super.dispose();
@@ -79,10 +99,14 @@ class _VerifyAccountSheetState extends State<VerifyAccountSheet> {
         _codeSent = true;
         _codeSentTo = email;
         _codeCtrl.clear();
+      } else if (res.retryAfter > 0 && _codeSentTo.toLowerCase() == email.toLowerCase()) {
+        // Code already on its way to this address: keep the code field open.
+        _codeSent = true;
       } else {
         _error = res.message.isNotEmpty ? res.message : 'Could not send the code. Please try again.';
       }
     });
+    if (res.retryAfter > 0) _startCooldown(res.retryAfter);
   }
 
   Future<void> _confirmCode() async {
@@ -212,7 +236,9 @@ class _VerifyAccountSheetState extends State<VerifyAccountSheet> {
                       child: _busyCode ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('Send code'),
                     )
                   else ...[
-                    Text('Code sent to $_codeSentTo. It\'s valid for 10 minutes.', style: t.bodySmall?.copyWith(color: AppColors.primary)),
+                    Text('We emailed a 6-digit code to $_codeSentTo.', style: t.bodySmall?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 2),
+                    Text("Can't see it? Check your spam or junk folder. The code expires in 10 minutes.", style: t.bodySmall?.copyWith(color: AppColors.ink.withValues(alpha: .6))),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _codeCtrl,
@@ -226,7 +252,7 @@ class _VerifyAccountSheetState extends State<VerifyAccountSheet> {
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        TextButton(onPressed: _busy ? null : _sendCode, child: const Text('Resend code')),
+                        TextButton(onPressed: (_busy || _cooldown > 0) ? null : _sendCode, child: Text(_cooldown > 0 ? 'Resend in ${_cooldown}s' : 'Resend code')),
                         const Spacer(),
                         FilledButton(
                           onPressed: _busy ? null : _confirmCode,

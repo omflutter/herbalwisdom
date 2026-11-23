@@ -63,7 +63,7 @@ class AuthController {
   /// Registration: verify the email with Google instead of the email code.
   Future<GoogleEmailCheckResult> verifyEmailWithGoogle() => _repo.verifyEmailWithGoogleForRegistration();
 
-  Future<bool> sendEmailOtp(String email) async {
+  Future<EmailCodeSendResult> sendEmailOtp(String email) async {
     return _repo.sendEmailOtp(email);
   }
 
