@@ -68,7 +68,28 @@ class _HomeScreenState extends State<HomeScreen> {
         uniqueMap[v.id] = v;
       }
 
-      return uniqueMap.values.where((v) => v.specialCoupon).toList();
+      final list = uniqueMap.values.where((v) => v.specialCoupon).toList();
+      list.sort((a, b) {
+        // 1. Active first (not used & not expired)
+        if (a.active != b.active) {
+          return a.active ? -1 : 1;
+        }
+        // 2. Unused before used
+        if (a.used != b.used) {
+          return a.used ? 1 : -1;
+        }
+        // 3. Admin assigned position
+        if (a.position != b.position) {
+          return a.position.compareTo(b.position);
+        }
+        // 4. Expiry date (expiring soonest first)
+        final expComp = a.expiryDate.compareTo(b.expiryDate);
+        if (expComp != 0) return expComp;
+        // 5. Newest first
+        return b.id.compareTo(a.id);
+      });
+
+      return list;
     } catch (_) {
       return [];
     }

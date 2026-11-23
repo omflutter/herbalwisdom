@@ -7,6 +7,8 @@ import 'package:app_badge_plus/app_badge_plus.dart';
 import 'dart:async';
 import '../../app/theme/colors.dart';
 import '../../features/notifications/repo/notifications_list_repo.dart';
+import '../../features/vouchers/repo/vouchers_repo.dart';
+import '../../features/chat/repo/chat_repo.dart';
 import '../../main.dart' show notificationReceivedController;
 
 class AppShell extends StatefulWidget {
@@ -116,8 +118,8 @@ class _AppShellState extends State<AppShell> {
       // Since ChatRepo is simple, we can instantiate it or use a static method if available.
       // For now, let's use a quick Firestore call to avoid circular imports if ChatRepo is heavy.
       // Actually, let's just use the same logic as ChatRepo to be safe.
-      final userId = FirebaseAuth.instance.currentUser?.uid;
-      if (userId == null) return;
+      final userId = FirebaseAuth.instance.currentUser?.uid ?? ChatRepo.resolvedUserId;
+      if (userId == null || userId.isEmpty) return;
 
       final batch = FirebaseFirestore.instance.batch();
       final col = FirebaseFirestore.instance.collection('chats').doc(userId).collection('conversation');
@@ -141,7 +143,9 @@ class _AppShellState extends State<AppShell> {
 
   void _goBranch(int index) {
     widget.navigationShell.goBranch(index, initialLocation: index == widget.navigationShell.currentIndex);
-    if (index == 2) {
+    if (index == 1) {
+      VouchersRepo.voucherUpdatesNotifier.value++;
+    } else if (index == 2) {
       _markChatSeen();
     } else if (index == 3) {
       _fetchNotificationCount();
@@ -150,10 +154,10 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final userId = FirebaseAuth.instance.currentUser?.uid;
+    final userId = FirebaseAuth.instance.currentUser?.uid ?? ChatRepo.resolvedUserId;
 
     // If no user, show basic nav bar without stream
-    if (userId == null) {
+    if (userId == null || userId.isEmpty) {
       return Scaffold(
         body: widget.navigationShell,
         bottomNavigationBar: NavigationBar(

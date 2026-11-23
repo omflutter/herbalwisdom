@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:herbalwisdom/common/widgets/app_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -8,6 +9,7 @@ class VouchersRepo {
   final Dio _dio = Dio(BaseOptions(baseUrl: AppConfig.apiBaseUrl, headers: {'Accept': 'application/json'}, connectTimeout: const Duration(seconds: 20), receiveTimeout: const Duration(seconds: 20)));
 
   static final List<Voucher> _cache = [];
+  static final ValueNotifier<int> voucherUpdatesNotifier = ValueNotifier<int>(0);
 
   /// Fetch vouchers.
   ///
@@ -102,10 +104,14 @@ class VouchersRepo {
       final res = await _dio.post('/use-specials', data: FormData.fromMap({'voucher_id': id}), options: Options(headers: {'auth-token': token}));
 
       if (res.statusCode == 200 && res.data['status'] == "1") {
-        final i = _cache.indexWhere((v) => v.id == id);
-        if (i >= 0) {
-          _cache[i].used = true; // locally mark as used
+        final baseId = id.startsWith('s_') ? id.substring(2) : id;
+        final specialId = 's_$baseId';
+        for (final item in _cache) {
+          if (item.id == baseId || item.id == specialId) {
+            item.used = true;
+          }
         }
+        voucherUpdatesNotifier.value++;
         return;
       } else {
         throw Exception(res.data['message'] ?? 'Failed to mark as used');

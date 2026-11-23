@@ -22,6 +22,9 @@ class Voucher {
   /// API: used_date_time (only present for USED list)
   final DateTime? usedAt;
 
+  /// API: position (integer sorting index set by admin)
+  final int position;
+
   Voucher({
     required this.id,
     required this.title,
@@ -32,6 +35,7 @@ class Voucher {
     this.specialCoupon = false,
     this.availableToAll = false,
     this.usedAt,
+    this.position = 999999,
   });
 
   /// Derived flags
@@ -47,14 +51,16 @@ class Voucher {
     DateTime _parseDate(dynamic v) {
       final s = (v ?? '').toString().trim();
       if (s.isEmpty) return DateTime.now();
-      return DateTime.parse(s); // handles "yyyy-MM-dd" and "yyyy-MM-dd HH:mm:ss"
+      return DateTime.tryParse(s) ?? DateTime.now(); // handles "yyyy-MM-dd" and "yyyy-MM-dd HH:mm:ss"
     }
 
     final usedStr = (json['used_date_time'] ?? '').toString().trim();
-    final usedAt = usedStr.isNotEmpty ? DateTime.parse(usedStr) : null;
+    final usedAt = usedStr.isNotEmpty ? DateTime.tryParse(usedStr) : null;
 
     final typeUpper = listType?.toUpperCase();
     final isUsedFromType = typeUpper == 'USED';
+
+    final posVal = int.tryParse(json['position']?.toString() ?? '');
 
     return Voucher(
       id: json['id'].toString(),
@@ -66,6 +72,7 @@ class Voucher {
       specialCoupon: json['special_coupon']?.toString() == '1',
       availableToAll: json['available_to_all']?.toString() == '1',
       usedAt: usedAt,
+      position: (posVal != null && posVal > 0) ? posVal : 999999,
     );
   }
 }

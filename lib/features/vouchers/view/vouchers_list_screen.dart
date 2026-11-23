@@ -48,6 +48,7 @@ class _VouchersListScreenState extends State<VouchersListScreen> {
   @override
   void initState() {
     super.initState();
+    VouchersRepo.voucherUpdatesNotifier.addListener(_onVoucherUpdate);
     // Only load ACTIVE tab initially
     _activeFuture = _repo.fetchAll(type: 'ACTIVE').then((data) {
       setState(() => _activeData = data);
@@ -60,8 +61,19 @@ class _VouchersListScreenState extends State<VouchersListScreen> {
     });
   }
 
+  void _onVoucherUpdate() {
+    if (!mounted) return;
+    setState(() {
+      if (_activeData != null) {
+        _activeData = _activeData!.where((v) => !v.used).toList();
+      }
+    });
+    _reload();
+  }
+
   @override
   void dispose() {
+    VouchersRepo.voucherUpdatesNotifier.removeListener(_onVoucherUpdate);
     _searchCtrl.dispose();
     _searchFocus.dispose();
     super.dispose();
@@ -158,8 +170,8 @@ class _VouchersListScreenState extends State<VouchersListScreen> {
           if (_currentData != null) {
             // Always use cached data if available, regardless of loading state
             items = List<Voucher>.from(s.data ?? _currentData!);
-            items.sort((a, b) => a.expiryDate.compareTo(b.expiryDate));
             items = items.where((v) => !v.specialCoupon).toList();
+            _sortVouchers(items);
 
             // Apply search
             final q = _query.trim();
@@ -169,8 +181,8 @@ class _VouchersListScreenState extends State<VouchersListScreen> {
           } else if (!loading && !hasError) {
             // Only use snapshot data if we don't have cache yet
             items = List<Voucher>.from(s.data ?? const []);
-            items.sort((a, b) => a.expiryDate.compareTo(b.expiryDate));
             items = items.where((v) => !v.specialCoupon).toList();
+            _sortVouchers(items);
 
             // Apply search
             final q = _query.trim();
@@ -466,6 +478,34 @@ class _VouchersListScreenState extends State<VouchersListScreen> {
   }
 
   // ---------- Helpers ----------
+
+  void _sortVouchers(List<Voucher> list) {
+    list.sort((a, b) {
+      if (_filter == 'USED') {
+        // In USED tab: Most recently used first
+        if (a.usedAt != null && b.usedAt != null) {
+          final usedComp = b.usedAt!.compareTo(a.usedAt!);
+          if (usedComp != 0) return usedComp;
+        } else if (a.usedAt != null) {
+          return -1;
+        } else if (b.usedAt != null) {
+          return 1;
+        }
+      }
+
+      // 1. By Admin Assigned Position (if assigned)
+      if (a.position != b.position) {
+        return a.position.compareTo(b.position);
+      }
+
+      // 2. By Expiry Date (expiring soonest first)
+      final expComp = a.expiryDate.compareTo(b.expiryDate);
+      if (expComp != 0) return expComp;
+
+      // 3. Fallback: newest ID first
+      return b.id.compareTo(a.id);
+    });
+  }
 
   bool _matchesQuery(Voucher v, String query) {
     final q = query.toLowerCase();

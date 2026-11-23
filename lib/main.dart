@@ -19,6 +19,7 @@ import 'app/app_router.dart';
 import 'app/theme/colors.dart';
 import 'app/theme/typography.dart';
 import 'package:herbalwisdom/common/widgets/app_config.dart';
+import 'package:herbalwisdom/features/chat/repo/chat_repo.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
@@ -110,6 +111,17 @@ Future<void> _loadCurrentUserName() async {
       _log(_L.i, 'Profile', 'Loaded user name: ${_currentUserName ?? "(null)"}');
 
       await sp.setString('user_name', _currentUserName ?? '');
+
+      final fId = details['firebase_id']?.toString().trim();
+      if (fId != null && fId.isNotEmpty) {
+        _log(_L.i, 'Profile', 'Loaded firebase_id: $fId');
+        await sp.setString('firebase_id', fId);
+        ChatRepo.setCachedUserId(fId);
+      }
+      final uId = details['id']?.toString().trim();
+      if (uId != null && uId.isNotEmpty) {
+        await sp.setString('user_id', uId);
+      }
     } else {
       _log(_L.w, 'Profile', 'Profile fetch failed: ${data['message']}');
     }
@@ -299,6 +311,14 @@ Future<void> main() async {
 
       await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
       _log(_L.i, 'Core', 'Firebase initialized (project: ${DefaultFirebaseOptions.currentPlatform.projectId})');
+
+      try {
+        final sp = await SharedPreferences.getInstance();
+        final cachedUid = sp.getString('firebase_id') ?? sp.getString('user_id');
+        if (cachedUid != null && cachedUid.isNotEmpty) {
+          ChatRepo.setCachedUserId(cachedUid);
+        }
+      } catch (_) {}
 
       await _loadCurrentUserName();
 

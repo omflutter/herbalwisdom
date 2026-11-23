@@ -15,23 +15,55 @@ import '../models/chat_message.dart';
 class ChatRepo {
   final _fire = FirebaseFirestore.instance;
   final _storage = FirebaseStorage.instance;
-
-  final String currentUserId = FirebaseAuth.instance.currentUser!.uid;
   final String adminId = 'admin';
+
+  static String? _cachedUserId;
+
+  static void setCachedUserId(String? uid) {
+    if (uid != null && uid.isNotEmpty) {
+      _cachedUserId = uid;
+    }
+  }
+
+  static String? get resolvedUserId {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null && uid.isNotEmpty) return uid;
+    return _cachedUserId;
+  }
+
+  String get currentUserId => resolvedUserId ?? '';
 
   final Dio _dio = Dio(BaseOptions(baseUrl: AppConfig.apiBaseUrl, connectTimeout: const Duration(seconds: 20), receiveTimeout: const Duration(seconds: 20), headers: {'Accept': 'application/json'}));
 
-  DocumentReference<Map<String, dynamic>> get _chatDoc => _fire.collection('chats').doc(currentUserId);
+  DocumentReference<Map<String, dynamic>>? get _chatDoc {
+    final uid = currentUserId;
+    if (uid.isEmpty) return null;
+    return _fire.collection('chats').doc(uid);
+  }
 
-  CollectionReference<Map<String, dynamic>> get _convCol => _chatDoc.collection('conversation');
+  CollectionReference<Map<String, dynamic>>? get _convCol {
+    final doc = _chatDoc;
+    if (doc == null) return null;
+    return doc.collection('conversation');
+  }
 
   // ===== FIRESTORE STREAM =====
   Stream<List<ChatMessage>> stream() {
-    return _convCol.orderBy('time', descending: false).snapshots().map((snap) => snap.docs.map((d) => ChatMessage.fromDoc(d)).toList());
+    final col = _convCol;
+    if (col == null) {
+      return const Stream.empty();
+    }
+    return col.orderBy('time', descending: false).snapshots().map((snap) => snap.docs.map((d) => ChatMessage.fromDoc(d)).toList());
   }
 
   // ===== SEND MESSAGE TO FIRESTORE (user or admin) =====
   Future<void> sendMessage({required String message, required String type, required bool fromAdmin, String? fileName, int? fileSize}) async {
+    final col = _convCol;
+    final doc = _chatDoc;
+    if (col == null || doc == null) {
+      throw Exception('Chat session not found. Please log in again.');
+    }
+
     final data = {
       'message': message,
       'sender': fromAdmin ? 'admin' : 'user',
@@ -43,9 +75,9 @@ class ChatRepo {
       'seen': fromAdmin ? false : true, // 👈 user messages auto-seen, admin's unseen
     };
 
-    await _convCol.add(data);
+    await col.add(data);
 
-    await _chatDoc.set({
+    await doc.set({
       'lastMessage': {
         'message': type == 'text' ? message : (fileName ?? type.toUpperCase()),
         'sender': fromAdmin ? 'admin' : 'user',
@@ -58,24 +90,32 @@ class ChatRepo {
 
   // ===== MARK ADMIN MESSAGES AS SEEN =====
   Future<void> markMessagesAsSeen() async {
-    final unseen = await _convCol.where('sender', isEqualTo: 'admin').where('seen', isEqualTo: false).get();
+    final col = _convCol;
+    final doc = _chatDoc;
+    if (col == null || doc == null) return;
+
+    final unseen = await col.where('sender', isEqualTo: 'admin').where('seen', isEqualTo: false).get();
 
     if (unseen.docs.isEmpty) return;
 
     final batch = _fire.batch();
-    for (final doc in unseen.docs) {
-      batch.update(doc.reference, {'seen': true});
+    for (final d in unseen.docs) {
+      batch.update(d.reference, {'seen': true});
     }
     await batch.commit();
 
     // Update chat document's last message as seen too
-    await _chatDoc.set({
+    await doc.set({
       'lastMessage': {'seen': true},
     }, SetOptions(merge: true));
   }
 
   Stream<int> unseenCountStream() {
-    return _convCol.where('sender', isEqualTo: 'admin').where('seen', isEqualTo: false).snapshots().map((snap) => snap.docs.length);
+    final col = _convCol;
+    if (col == null) {
+      return Stream.value(0);
+    }
+    return col.where('sender', isEqualTo: 'admin').where('seen', isEqualTo: false).snapshots().map((snap) => snap.docs.length);
   }
 
   // ===== PUBLIC: SEND TEXT FROM USER =====
@@ -133,8 +173,11 @@ class ChatRepo {
     // 🔹 Show preview immediately
     onPreviewReady(file.path);
 
+    final uid = currentUserId;
+    if (uid.isEmpty) throw Exception('Chat session not found. Please log in again.');
+
     // 🔹 Upload to Firebase Storage
-    final ref = _storage.ref().child('chat_uploads/$currentUserId/${DateTime.now().millisecondsSinceEpoch}_$name');
+    final ref = _storage.ref().child('chat_uploads/$uid/${DateTime.now().millisecondsSinceEpoch}_$name');
 
     final uploadTask = ref.putFile(file);
 
@@ -165,6 +208,12 @@ class ChatRepo {
     }
 
     final chatId = currentUserId; // using Firebase UID as session id
+    if (chatId.isEmpty) {
+      if (kDebugMode) {
+        print('⚠️ [ChatRepo] Missing currentUserId – not sending to API');
+      }
+      return;
+    }
 
     final form = FormData.fromMap({'chat_id': chatId, 'message': message});
 

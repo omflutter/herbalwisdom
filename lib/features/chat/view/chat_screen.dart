@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:herbalwisdom/common/widgets/app_config.dart';
 import '../repo/chat_repo.dart';
 import '../models/chat_message.dart';
 
@@ -26,6 +28,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   List<ChatMessage> _messages = [];
   bool _userScrolledUp = false;
   bool _isVisible = false; // ✅ True only when user is really seeing chat tab
+  bool _loadingUser = false;
 
   // Upload preview state
   String? _uploadingFilePath;
@@ -36,11 +39,47 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _ensureUserId();
 
     // 👇 Detect first visibility after build
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _isVisible = ModalRoute.of(context)?.isCurrent ?? true;
     });
+  }
+
+  Future<void> _ensureUserId() async {
+    if (_repo.currentUserId.isEmpty) {
+      setState(() => _loadingUser = true);
+      try {
+        final sp = await SharedPreferences.getInstance();
+        final uid = sp.getString('firebase_id') ?? sp.getString('user_id');
+        if (uid != null && uid.isNotEmpty) {
+          ChatRepo.setCachedUserId(uid);
+        } else {
+          final token = sp.getString('auth_token');
+          if (token != null && token.isNotEmpty) {
+            final dio = Dio(BaseOptions(
+              baseUrl: AppConfig.apiBaseUrl,
+              connectTimeout: const Duration(seconds: 15),
+              receiveTimeout: const Duration(seconds: 15),
+              headers: {'Accept': 'application/json', 'auth-token': token},
+            ));
+            final res = await dio.get('/get-user-profile');
+            if (res.data['status']?.toString() == '1' && res.data['details'] is Map) {
+              final fId = res.data['details']['firebase_id']?.toString().trim();
+              if (fId != null && fId.isNotEmpty) {
+                await sp.setString('firebase_id', fId);
+                ChatRepo.setCachedUserId(fId);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('ChatScreen _ensureUserId error: $e');
+      } finally {
+        if (mounted) setState(() => _loadingUser = false);
+      }
+    }
   }
 
   @override
@@ -295,6 +334,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final hasUser = _repo.currentUserId.isNotEmpty;
+
     return GestureDetector(
       onTap: () {
         // Dismiss keyboard when tapping anywhere on screen
@@ -311,29 +352,81 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ),
           title: const Text('Chat with Admin'),
         ),
-        body: Column(
-          children: [
-            Expanded(
-              child: NotificationListener<ScrollNotification>(
-                onNotification: (scroll) {
-                  if (scroll is UserScrollNotification) {
-                    // In reverse mode, scrolling down (away from bottom) means moving forward
-                    if (scroll.direction == ScrollDirection.reverse) {
-                      _userScrolledUp = true;
-                    } else if (scroll.direction == ScrollDirection.forward && _isNearBottom()) {
-                      _userScrolledUp = false;
-                    }
-                  }
-                  return false;
-                },
-                child: StreamBuilder<List<ChatMessage>>(
-                  stream: _repo.stream(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
+        body: _loadingUser
+            ? const Center(child: CircularProgressIndicator())
+            : !hasUser
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Session Expired or Inactive',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Please log out and log in again with your phone number to access chat.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.black54),
+                          ),
+                          const SizedBox(height: 20),
+                          FilledButton(
+                            onPressed: () {
+                              StatefulNavigationShell.of(context).goBranch(0);
+                            },
+                            child: const Text('Go to Home'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : Column(
+                    children: [
+                      Expanded(
+                        child: NotificationListener<ScrollNotification>(
+                          onNotification: (scroll) {
+                            if (scroll is UserScrollNotification) {
+                              // In reverse mode, scrolling down (away from bottom) means moving forward
+                              if (scroll.direction == ScrollDirection.reverse) {
+                                _userScrolledUp = true;
+                              } else if (scroll.direction == ScrollDirection.forward && _isNearBottom()) {
+                                _userScrolledUp = false;
+                              }
+                            }
+                            return false;
+                          },
+                          child: StreamBuilder<List<ChatMessage>>(
+                            stream: _repo.stream(),
+                            builder: (context, snapshot) {
+                              if (snapshot.hasError) {
+                                return Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(24.0),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.error_outline, size: 48, color: Colors.orange),
+                                        const SizedBox(height: 12),
+                                        const Text('Unable to connect to chat'),
+                                        const SizedBox(height: 8),
+                                        TextButton(
+                                          onPressed: () => setState(() {}),
+                                          child: const Text('Retry'),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }
+                              if (snapshot.connectionState == ConnectionState.waiting) {
+                                return const Center(child: CircularProgressIndicator());
+                              }
 
-                    final msgs = snapshot.data ?? const <ChatMessage>[];
+                              final msgs = snapshot.data ?? const <ChatMessage>[];
 
                     // ✅ Check visibility strictly using shell index
                     bool isChatTab = false;
