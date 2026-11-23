@@ -4,6 +4,7 @@ import '../../../common/widgets/back_exit_guard.dart';
 import '../../../common/widgets/auth_frame.dart';
 import '../controller/auth_controller.dart';
 import 'otp_screen.dart';
+import '../../../common/widgets/google_mark.dart';
 import '../../home/view/home_screen.dart';
 import '../../notifications/view/notifcation_prefs_screen.dart';
 
@@ -217,7 +218,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     icon:
                         _googleBusy
                             ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const _GoogleMark(),
+                            : const GoogleMark(),
                     label: const Text('Continue with Google'),
                   ),
                 ),
@@ -261,22 +262,6 @@ class _OrDivider extends StatelessWidget {
         Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Text('or', style: Theme.of(context).textTheme.bodySmall)),
         Expanded(child: Divider(color: color)),
       ],
-    );
-  }
-}
-
-/// Simple multi-colour "G" so we don't need an image asset.
-class _GoogleMark extends StatelessWidget {
-  const _GoogleMark();
-
-  @override
-  Widget build(BuildContext context) {
-    return ShaderMask(
-      shaderCallback:
-          (bounds) => const SweepGradient(
-            colors: [Color(0xFF4285F4), Color(0xFF34A853), Color(0xFFFBBC05), Color(0xFFEA4335), Color(0xFF4285F4)],
-          ).createShader(bounds),
-      child: const Text('G', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white, height: 1)),
     );
   }
 }

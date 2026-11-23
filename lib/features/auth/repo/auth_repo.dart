@@ -8,7 +8,8 @@ import 'package:herbalwisdom/common/widgets/app_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_app_installations/firebase_app_installations.dart';
-import 'package:google_sign_in/google_sign_in.dart';
+import 'google_identity.dart';
+import '../../verification/repo/verification_repo.dart';
 
 import '../mdoels/auth_models.dart';
 
@@ -155,23 +156,13 @@ class AuthRepo {
   ///
   /// Backend links/creates the account by the Google email and marks that email as verified
   /// (this also verifies an existing account whose email was never verified).
-  static bool _googleInitialized = false;
-
   Future<GoogleLoginResult> signInWithGoogle() async {
     try {
-      final google = GoogleSignIn.instance;
-      if (!_googleInitialized) {
-        await google.initialize();
-        _googleInitialized = true;
-      }
+      final picked = await GoogleIdentity.pickAccount();
+      if (picked.cancelled) return GoogleLoginResult(status: '0', message: '', cancelled: true);
+      if (!picked.ok) return GoogleLoginResult(status: '0', message: picked.error ?? 'Google sign-in failed.');
 
-      final account = await google.authenticate();
-      final googleIdToken = account.authentication.idToken;
-      if (googleIdToken == null) {
-        return GoogleLoginResult(status: '0', message: 'Google did not return a sign-in token.');
-      }
-
-      await _auth.signInWithCredential(GoogleAuthProvider.credential(idToken: googleIdToken));
+      await _auth.signInWithCredential(GoogleAuthProvider.credential(idToken: picked.idToken));
       final firebaseIdToken = await _auth.currentUser?.getIdToken(true);
       if (firebaseIdToken == null) {
         return GoogleLoginResult(status: '0', message: 'Could not complete Google sign-in.');
@@ -205,12 +196,6 @@ class AuthRepo {
       }
 
       return GoogleLoginResult(status: status, message: message, token: token, isNewUser: details['is_new_user'] == true, phoneRequired: details['phone_required'] == true);
-    } on GoogleSignInException catch (e) {
-      if (e.code == GoogleSignInExceptionCode.canceled) {
-        return GoogleLoginResult(status: '0', message: '', cancelled: true);
-      }
-      debugPrint('❌ [AuthRepo] Google sign-in error: ${e.code} ${e.description}');
-      return GoogleLoginResult(status: '0', message: 'Google sign-in failed. Please try again.');
     } on FirebaseAuthException catch (e) {
       debugPrint('❌ [AuthRepo] Firebase Google credential error: ${e.code} ${e.message}');
       await _signOutGoogle();
@@ -226,10 +211,32 @@ class AuthRepo {
     }
   }
 
-  Future<void> _signOutGoogle() async {
+  Future<void> _signOutGoogle() => GoogleIdentity.signOut();
+
+  /// Registration helper: verify an email with Google (instead of the email code).
+  /// Returns the verified email + name from Google, or an error message.
+  Future<GoogleEmailCheckResult> verifyEmailWithGoogleForRegistration() async {
+    final picked = await GoogleIdentity.pickAccount();
+    if (picked.cancelled) return GoogleEmailCheckResult(cancelled: true);
+    if (!picked.ok) return GoogleEmailCheckResult(message: picked.error);
     try {
-      if (_googleInitialized) await GoogleSignIn.instance.signOut();
-    } catch (_) {}
+      final resp = await _dio.post('/verify-email-with-google', data: FormData.fromMap({'id_token': picked.idToken}));
+      final data = resp.data as Map;
+      final details = data['details'] is Map ? data['details'] as Map : const {};
+      if (data['status']?.toString() == '1') {
+        return GoogleEmailCheckResult(
+          email: details['email']?.toString(),
+          firstName: details['first_name']?.toString() ?? '',
+          lastName: details['last_name']?.toString() ?? '',
+        );
+      }
+      return GoogleEmailCheckResult(message: (data['message'] ?? 'Google could not verify your email.').toString());
+    } on DioException catch (e) {
+      debugPrint('❌ [AuthRepo] verify-email-with-google: ${e.message}');
+      return GoogleEmailCheckResult(message: 'Network error');
+    } finally {
+      await GoogleIdentity.signOut();
+    }
   }
 
   /// --- CALL /register-user (returns token on success) ---
@@ -313,6 +320,7 @@ class AuthRepo {
       await _signOutGoogle();
       await _auth.signOut();
       await prefs.clear(); // This clears user_id too
+      VerificationRepo.status.value = null;
       _current = null;
       debugPrint('👋 [AuthRepo] Local logout complete');
     }
@@ -400,6 +408,16 @@ class LoginApiResult {
   final String message;
   final String? token;
   LoginApiResult({required this.status, required this.message, this.token});
+}
+
+class GoogleEmailCheckResult {
+  final String? email; // set on success
+  final String firstName;
+  final String lastName;
+  final String? message;
+  final bool cancelled;
+  GoogleEmailCheckResult({this.email, this.firstName = '', this.lastName = '', this.message, this.cancelled = false});
+  bool get ok => email != null;
 }
 
 class GoogleLoginResult {

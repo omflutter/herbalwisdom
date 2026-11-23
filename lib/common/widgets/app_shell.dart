@@ -10,6 +10,7 @@ import '../../features/notifications/repo/notifications_list_repo.dart';
 import '../../features/vouchers/repo/vouchers_repo.dart';
 import '../../features/chat/repo/chat_repo.dart';
 import '../../main.dart' show notificationReceivedController;
+import '../../features/verification/widgets/verification_banner_host.dart';
 
 class AppShell extends StatefulWidget {
   final StatefulNavigationShell navigationShell;
@@ -159,7 +160,7 @@ class _AppShellState extends State<AppShell> {
     // If no user, show basic nav bar without stream
     if (userId == null || userId.isEmpty) {
       return Scaffold(
-        body: widget.navigationShell,
+        body: VerificationBannerHost(child: widget.navigationShell),
         bottomNavigationBar: NavigationBar(
           selectedIndex: widget.navigationShell.currentIndex,
           onDestinationSelected: _goBranch,
@@ -176,7 +177,7 @@ class _AppShellState extends State<AppShell> {
     }
 
     return Scaffold(
-      body: widget.navigationShell,
+      body: VerificationBannerHost(child: widget.navigationShell),
       bottomNavigationBar: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('chats').doc(userId).collection('conversation').where('sender', isEqualTo: 'admin').where('seen', isEqualTo: false).snapshots(),
         builder: (context, snapshot) {

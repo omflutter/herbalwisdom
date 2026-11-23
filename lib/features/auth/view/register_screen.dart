@@ -2,6 +2,7 @@ import 'dart:async'; // for Timer
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../common/widgets/auth_frame.dart';
+import '../../../common/widgets/google_mark.dart';
 import '../controller/auth_controller.dart';
 import '../../notifications/view/notifcation_prefs_screen.dart';
 import 'otp_screen.dart';
@@ -34,8 +35,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   late final String _verifiedPhone; // phone from OTP screen (read-only)
 
   // Step variables for email verification
-  bool _verificationSent = false;
   bool _isVerified = false;
+  bool _verifiedByGoogle = false;
+  bool _googleBusy = false;
   Timer? _verificationTimer;
 
   String? _verificationId;
@@ -137,6 +139,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+  /// Verify the email with Google instead of the email code. Uses the Google account's email.
+  Future<void> _verifyWithGoogle() async {
+    setState(() => _googleBusy = true);
+    final res = await _auth.verifyEmailWithGoogle();
+    if (!mounted) return;
+    setState(() => _googleBusy = false);
+    if (res.cancelled) return;
+    if (!res.ok) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res.message ?? 'Google could not verify your email.')));
+      return;
+    }
+    setState(() {
+      _email.text = res.email!;
+      if (_first.text.trim().isEmpty) _first.text = res.firstName;
+      if (_last.text.trim().isEmpty) _last.text = res.lastName;
+      _isVerified = true;
+      _verifiedByGoogle = true;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Email verified with Google ✅')));
+  }
+
   // Show Email OTP Dialog
   void _showEmailOtpDialog(String email) {
     final otpCtrl = TextEditingController();
@@ -177,7 +200,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               Navigator.of(ctx).pop();
                               setState(() {
                                 _isVerified = true;
-                                _verificationSent = true;
                               });
                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Email verified! ✅')));
                             } else {
@@ -233,27 +255,41 @@ class _RegisterScreenState extends State<RegisterScreen> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _email,
+                readOnly: _isVerified,
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.next,
                 decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.email_outlined)),
                 validator: _auth.validateEmail,
               ),
               if (_postOtpMode && !_isVerified) ...[
+                const SizedBox(height: 8),
+                Align(alignment: Alignment.centerLeft, child: Text('Verify your email to continue:', style: Theme.of(context).textTheme.bodySmall)),
                 const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child:
-                      _verificationSent
-                          ? TextButton.icon(
-                            onPressed: null, // polling will handle it
-                            icon: const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
-                            label: const Text('Verifying... (check inbox)'),
-                          )
-                          : TextButton(onPressed: _sendVerification, child: const Text('Verify Email')),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: (_busy || _googleBusy) ? null : _sendVerification,
+                        icon: const Icon(Icons.mark_email_read_outlined, size: 18),
+                        label: const Text('Email code'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: (_busy || _googleBusy) ? null : _verifyWithGoogle,
+                        icon: _googleBusy ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const GoogleMark(size: 18),
+                        label: const Text('Use Google'),
+                      ),
+                    ),
+                  ],
                 ),
               ] else if (_postOtpMode && _isVerified) ...[
                 const SizedBox(height: 6),
-                const Align(alignment: Alignment.centerRight, child: Text('✅ Email Verified', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold))),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(_verifiedByGoogle ? '✅ Email verified with Google' : '✅ Email Verified', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                ),
               ],
               const SizedBox(height: 12),
 

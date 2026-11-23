@@ -60,6 +60,9 @@ class AuthController {
   /// Sign in / sign up with Google (also verifies the email of an existing account).
   Future<GoogleLoginResult> loginWithGoogle() => _repo.signInWithGoogle();
 
+  /// Registration: verify the email with Google instead of the email code.
+  Future<GoogleEmailCheckResult> verifyEmailWithGoogle() => _repo.verifyEmailWithGoogleForRegistration();
+
   Future<bool> sendEmailOtp(String email) async {
     return _repo.sendEmailOtp(email);
   }
